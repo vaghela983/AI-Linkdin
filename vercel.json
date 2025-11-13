@@ -2,7 +2,8 @@
   "version": 2,
   "functions": {
     "api/generate.js": {
-      "runtime": "nodejs18.x"
+    "runtime": "vercel-nodejs@2.0.0"
+
     }
   }
 }
