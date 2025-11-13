@@ -1,11 +1,11 @@
 {
   "name": "ai-linkdin",
   "version": "1.0.0",
-  "main": "api/generate.js",
+  
    "type": "module",
   "scripts": {
-    "dev": "nodemon api/generate-local.js",
-    "start": "node api/generate-local.js"
+    "dev": "nodemon api/generate.js"
+   
   },
   "keywords": [],
   "author": "",
