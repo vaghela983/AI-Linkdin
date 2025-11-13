@@ -123,7 +123,7 @@ raw = raw.replace(/\s+</g, "<").replace(/>\s+/g, ">");
   }
 });
 
-// app.listen(5000, () =>
-//   console.log("API running → http://localhost:5000/generate")
-// );
-export default app;
+app.listen(5000, () =>
+  console.log("API running → http://localhost:5000/generate")
+);
+
