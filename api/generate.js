@@ -2,45 +2,59 @@ import express from "express";
 import dotenv from "dotenv";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import cors from "cors";
+
 dotenv.config();
 
 const app = express();
 app.use(express.json());
 app.use(cors());
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 app.post("/generate", async (req, res) => {
   try {
-    const { topic, tone } = req.body;
+    const {
+      topic,
+      tone,
+      industry,
+      audience,
+      length,
+      keywords,
+      hashtags,
+      engaging,
+      stats,
+      emojis,
+      cta
+    } = req.body;
 
-    // Best free instruction-following model
     const model = genAI.getGenerativeModel({
       model: "gemini-2.0-flash-lite"
     });
 
-    // ===================== PROMPT =====================
+    // =============== UPDATED FULL PROMPT ===============
     const prompt = `
 You are a STRICT HTML generator. Follow ALL rules exactly.
 
 FORBIDDEN OUTPUT:
 - "html"
 - "HTML"
-- "\n"
+- "\\n"
 - ANY text before <h1>
 - ANY unclosed tags
+- ANY attributes inside tags
 
 HARD RULES:
 1. Output ONLY valid HTML.
 2. Allowed tags: <h1>, <h2>, <h3>, <ul>, <li>, <p>, <div>.
-3. ALL tags MUST be closed: </h1>, </h2>, </h3>, </li>, </p>, </div>.
-4. No markdown (** * ##).
-5. No attributes allowed.
-6. Exactly 3 emojis total:
-   - 1 in <h1>
-   - 1 in FIRST <li>
-   - 1 in CTA <p>
-7. At least 20 lines of HTML.
-8. Only the structure below is allowed.
+3. All tags MUST be properly closed.
+4. No markdown allowed.
+5. Total emojis allowed: EXACTLY 3.
+   - 1 emoji in <h1>
+   - 1 emoji in FIRST <li>
+   - 1 emoji in CTA <p>
+6. At least 20 HTML lines.
+7. Must follow the structure below.
+8. Must integrate ALL user inputs: topic, tone, industry, audience, length, keywords, hashtags, toggles.
 
 STRUCTURE:
 
@@ -59,64 +73,66 @@ STRUCTURE:
 
 <p>[CTA — EXACTLY 1 emoji — EXACTLY 2 sentences]</p>
 
-<div>[Hashtags one line]</div>
+<div>[Hashtags one line — space separated — no emojis]</div>
 
+USER INPUTS:
 TOPIC: "${topic}"
-TONE: "${tone || "professional, clean, modern"}"
+TONE: "${tone}"
+INDUSTRY: "${industry}"
+AUDIENCE: "${audience}"
+POST LENGTH (characters): "${length}"
+KEYWORDS: "${keywords}"
+CUSTOM HASHTAGS: "${hashtags}"
+ENGAGING QUESTION ENABLED: "${engaging}"
+INCLUDE STATS: "${stats}"
+INCLUDE EMOJIS: "${emojis}"
+INCLUDE CTA: "${cta}"
 
-NOW OUTPUT ONLY THE HTML. NOTHING ELSE.
-`;
+Final Output Requirement:
+→ OUTPUT ONLY THE HTML. NO OTHER TEXT.
+→ No extra spaces or blank lines.
+→ No comments or explanations.
+    `;
     // ====================================================
 
     const result = await model.generateContent(prompt);
 
-    // Extract raw output
     let raw =
       result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-   // ===================== FINAL SANITIZER (NO \n ANYWHERE) =====================
+    // ===================== SANITIZER =====================
+    raw = raw
+      .replace(/^html/i, "")
+      .replace(/^HTML/i, "")
+      .replace(/\\n/g, "")
+      .replace(/\n/g, "")
+      .trim();
 
-// 1. Remove unwanted prefixes
-raw = raw
-  .replace(/^html/i, "")
-  .replace(/^HTML/i, "")
-  .replace(/\\n/g, "")     // remove literal "\n"
-  .replace(/\n/g, "")      // remove real newline characters
-  .trim();
+    raw = raw.replace(
+      /<\/?(?!h1|h2|h3|ul|li|p|div)[^>]*>/gi,
+      ""
+    );
 
-// 2. Remove disallowed tags
-raw = raw.replace(
-  /<\/?(?!h1|h2|h3|ul|li|p|div)[^>]*>/gi,
-  ""
-);
+    raw = raw.replace(/<h1>([^<]*?)(?=<h2>|$)/g, "<h1>$1</h1>");
+    raw = raw.replace(/<h2>([^<]*?)(?=<h3>|$)/g, "<h2>$1</h2>");
+    raw = raw.replace(/<h3>([^<]*?)(?=<ul>|$)/g, "<h3>$1</h3>");
 
-// 3. Auto-close missing heading tags
-raw = raw.replace(/<h1>([^<]*?)(?=<h2>|$)/g, "<h1>$1</h1>");
-raw = raw.replace(/<h2>([^<]*?)(?=<h3>|$)/g, "<h2>$1</h2>");
-raw = raw.replace(/<h3>([^<]*?)(?=<ul>|$)/g, "<h3>$1</h3>");
+    raw = raw.replace(/<p>([^<]*?)(?=<div>|$)/g, "<p>$1</p>");
+    raw = raw.replace(/<div>([^<]*?)(?=$)/g, "<div>$1</div>");
 
-// 4. Auto-close <p> and <div>
-raw = raw.replace(/<p>([^<]*?)(?=<div>|$)/g, "<p>$1</p>");
-raw = raw.replace(/<div>([^<]*?)(?=$)/g, "<div>$1</div>");
+    raw = raw.replace(/<li>([^<]+?)(?=<li>|<\/ul>)/g, "<li>$1</li>");
 
-// 5. Auto-fix <li> closing
-raw = raw.replace(/<li>([^<]+?)(?=<li>|<\/ul>)/g, "<li>$1</li>");
+    raw = raw.replace(/(<div><\/div>){2,}/g, "<div></div>");
 
-// 6. Remove empty repeated <div></div>
-raw = raw.replace(/(<div><\/div>){2,}/g, "<div></div>");
+    raw = raw.replace(/[*_`]/g, "");
 
-// 7. Remove markdown symbols
-raw = raw.replace(/[*_`]/g, "");
+    raw = raw.replace(/[\r\n]+/g, "");
 
-// 8. Remove ALL remaining newline characters (FINAL HARD CLEAN)
-raw = raw.replace(/[\r\n]+/g, "");
-
-// 9. Remove accidental spaces before/after tags
-raw = raw.replace(/\s+</g, "<").replace(/>\s+/g, ">");
-
-// =================== END SANITIZER ===================
+    raw = raw.replace(/\s+</g, "<").replace(/>\s+/g, ">");
+    // =====================================================
 
     res.json({ post: raw });
+
   } catch (err) {
     console.error("Gemini Error:", err);
     res.status(500).json({ error: "Failed to generate content" });
@@ -126,4 +142,3 @@ raw = raw.replace(/\s+</g, "<").replace(/>\s+/g, ">");
 app.listen(5000, () =>
   console.log("API running → http://localhost:5000/generate")
 );
-
